@@ -81,7 +81,7 @@ def _handle_navigation_command(driver, instruction, element=None, text=None):
     command, argument, _ = _unpack_instruction(instruction)
 
     if command == "get":
-        driver.get(argument)
+        driver.execute_script(f"window.location.href = '{argument}';")
     elif command == "refresh":
         driver.refresh()
 

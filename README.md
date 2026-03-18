@@ -1,4 +1,4 @@
-# web-utilities Submodule
+# `web-utilities` Submodule
 
 <!-- Shared Python utilities for web automation, API access, and browser-based
 tasks -->

@@ -31,13 +31,6 @@ def initialize(
     if headless:
         options.add_argument("--headless=new")
     if user_data_directory and profile_directory:
-        # Remove a stale lock file to ensure Chrome can acquire the profile
-        # cleanly.
-        lock_file = os.path.join(
-            user_data_directory, profile_directory, "LOCK"
-        )
-        if os.path.exists(lock_file):
-            os.remove(lock_file)
         options.add_argument("--user-data-dir=" + user_data_directory)
         options.add_argument("--profile-directory=" + profile_directory)
 

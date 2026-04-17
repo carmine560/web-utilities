@@ -1,16 +1,12 @@
 """Manage and execute actions with a Selenium WebDriver."""
 
-import os
 import re
-import shutil
 import time
 
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
-from webdriver_manager.chrome import ChromeDriverManager
 
 from core_utilities import configuration
 
@@ -25,16 +21,18 @@ def initialize(
     implicitly_wait=2,
 ):
     """Initialize a Selenium WebDriver with specified options."""
-    executable_path = ChromeDriverManager().install()
-    service = Service(executable_path=executable_path)
     options = Options()
     if headless:
         options.add_argument("--headless=new")
     if user_data_directory and profile_directory:
         options.add_argument("--user-data-dir=" + user_data_directory)
         options.add_argument("--profile-directory=" + profile_directory)
+    options.add_argument("--restore-last-session=false")
+    options.add_experimental_option("excludeSwitches", ["enable-automation"])
+    prefs = {"profile.exit_type": "Normal"}
+    options.add_experimental_option("prefs", prefs)
 
-    driver = webdriver.Chrome(service=service, options=options)
+    driver = webdriver.Chrome(options=options)
     driver.implicitly_wait(implicitly_wait)
 
     driver.execute_cdp_cmd(
@@ -45,21 +43,6 @@ def initialize(
             ).replace("Headless", "")
         },
     )
-
-    os_type_directory = os.path.dirname(
-        os.path.dirname(os.path.dirname(executable_path))
-    )
-    version_directories = [
-        os.path.join(os_type_directory, subdirectory)
-        for subdirectory in os.listdir(os_type_directory)
-        if (
-            os.path.isdir(os.path.join(os_type_directory, subdirectory))
-            and re.fullmatch(r"\d+\.\d+\.\d+\.\d+", subdirectory)
-        )
-    ]
-    version_directories.sort(key=os.path.getctime, reverse=True)
-    for version_directory in version_directories[1:]:
-        shutil.rmtree(version_directory)
 
     return driver
 

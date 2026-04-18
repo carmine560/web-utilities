@@ -27,6 +27,8 @@ def initialize(
     if user_data_directory and profile_directory:
         options.add_argument("--user-data-dir=" + user_data_directory)
         options.add_argument("--profile-directory=" + profile_directory)
+    # Suppress the session restore dialog to prevent it from blocking
+    # navigation.
     options.add_argument("--restore-last-session=false")
     options.add_experimental_option("excludeSwitches", ["enable-automation"])
     prefs = {"profile.exit_type": "Normal"}

@@ -30,9 +30,6 @@ def initialize(
     # Suppress the session restore dialog to prevent it from blocking
     # navigation.
     options.add_argument("--restore-last-session=false")
-    options.add_experimental_option("excludeSwitches", ["enable-automation"])
-    prefs = {"profile.exit_type": "Normal"}
-    options.add_experimental_option("prefs", prefs)
 
     driver = webdriver.Chrome(options=options)
     driver.implicitly_wait(implicitly_wait)

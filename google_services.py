@@ -4,13 +4,14 @@ from email.message import EmailMessage
 import base64
 import os
 import re
-import sys
 
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
+
+from core_utilities.errors import ExternalServiceError
 
 
 def get_calendar_resource(credentials_path, calendar_id, summary, timezone):
@@ -28,24 +29,26 @@ def get_calendar_resource(credentials_path, calendar_id, summary, timezone):
             )
             calendar_id = calendar["id"]
         except HttpError as e:
-            print(e)
-            sys.exit(1)
+            raise ExternalServiceError(
+                f"Unable to create calendar resource: {e}"
+            ) from e
 
     return (resource, calendar_id)
 
 
 def insert_calendar_event(resource, calendar_id, body):
-    """Insert an event into a calendar and print its start time and summary."""
+    """Insert an event into a calendar and return the created event."""
     try:
         event = (
             resource.events()
             .insert(calendarId=calendar_id, body=body)
             .execute()
         )
-        print(event.get("start")["dateTime"], event.get("summary"))
     except HttpError as e:
-        print(e)
-        sys.exit(1)
+        raise ExternalServiceError(
+            f"Unable to insert calendar event: {e}"
+        ) from e
+    return event
 
 
 def send_email_message(
@@ -69,8 +72,9 @@ def send_email_message(
         try:
             resource.users().messages().send(userId="me", body=body).execute()
         except HttpError as e:
-            print(e)
-            sys.exit(1)
+            raise ExternalServiceError(
+                f"Unable to send Gmail message: {e}"
+            ) from e
 
 
 def extract_string_from_email(
@@ -91,8 +95,9 @@ def extract_string_from_email(
             .execute()
         )
     except HttpError as e:
-        print(e)
-        return None
+        raise ExternalServiceError(
+            f"Unable to list Gmail messages: {e}"
+        ) from e
 
     for summary in result.get("messages", []):
         try:
@@ -103,8 +108,9 @@ def extract_string_from_email(
                 .execute()
             )
         except HttpError as e:
-            print(e)
-            return None
+            raise ExternalServiceError(
+                f"Unable to fetch Gmail message {summary['id']}: {e}"
+            ) from e
 
         payload = message["payload"]
 
@@ -148,8 +154,9 @@ def get_credentials(token_json):
                 )
                 credentials = flow.run_local_server(port=0)
             except (FileNotFoundError, ValueError) as e:
-                print(e)
-                sys.exit(1)
+                raise ExternalServiceError(
+                    f"Unable to obtain Google credentials: {e}"
+                ) from e
         with open(token_json, "w", encoding="utf-8") as token:
             token.write(credentials.to_json())
     return credentials

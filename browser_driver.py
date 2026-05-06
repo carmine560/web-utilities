@@ -4,12 +4,14 @@ import re
 import time
 
 from selenium import webdriver
+from selenium.common.exceptions import TimeoutException
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
+from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.support.ui import WebDriverWait
 
 from core_utilities import configuration
-
 
 # Browser Driver Initialization
 
@@ -27,12 +29,19 @@ def initialize(
     if user_data_directory and profile_directory:
         options.add_argument("--user-data-dir=" + user_data_directory)
         options.add_argument("--profile-directory=" + profile_directory)
+    options.add_argument("--window-size=1600,1000")
     # Suppress the session restore dialog to prevent it from blocking
     # navigation.
     options.add_argument("--restore-last-session=false")
 
     driver = webdriver.Chrome(options=options)
+    if not headless:
+        try:
+            driver.maximize_window()
+        except Exception:
+            pass
     driver.implicitly_wait(implicitly_wait)
+    driver._trading_peripheral_wait_timeout = max(float(implicitly_wait), 1.0)
 
     driver.execute_cdp_cmd(
         "Network.setUserAgentOverride",
@@ -75,11 +84,15 @@ def _handle_element_command(driver, instruction, element=None, text=None):
     command, argument, additional_argument = _unpack_instruction(instruction)
 
     if command == "clear":
-        driver.find_element(By.XPATH, argument).clear()
+        _wait_for_visible(driver, argument).clear()
     elif command == "click":
-        driver.find_element(By.XPATH, argument).click()
+        target = _wait_for_clickable(driver, argument)
+        driver.execute_script(
+            "arguments[0].scrollIntoView({block: 'center'});", target
+        )
+        target.click()
     elif command == "send_keys":
-        target = driver.find_element(By.XPATH, argument)
+        target = _wait_for_visible(driver, argument)
         if additional_argument == "enter":
             target.send_keys(Keys.ENTER)
         elif additional_argument == "element":
@@ -93,7 +106,7 @@ def _handle_element_command(driver, instruction, element=None, text=None):
 def _handle_text_command(driver, instruction, element=None, text=None):
     """Handle text extraction command."""
     _, argument, _ = _unpack_instruction(instruction)
-    text.append(driver.find_element(By.XPATH, argument).text)
+    text.append(_wait_for_visible(driver, argument).text)
     return True
 
 
@@ -129,6 +142,45 @@ def _handle_control_flow_command(driver, instruction, element=None, text=None):
     return True
 
 
+def _get_wait_timeout(driver):
+    """Return the explicit wait timeout configured for the driver."""
+    return getattr(driver, "_trading_peripheral_wait_timeout", 5.0)
+
+
+def _wait_for_visible(driver, xpath):
+    """Wait until an element is visible and return it."""
+    return WebDriverWait(driver, _get_wait_timeout(driver)).until(
+        EC.visibility_of_element_located((By.XPATH, xpath))
+    )
+
+
+def _find_interactable_match(driver, xpath):
+    """Return the first displayed, enabled match for an XPath."""
+    for candidate in driver.find_elements(By.XPATH, xpath):
+        if candidate.is_displayed() and candidate.is_enabled():
+            return candidate
+    return None
+
+
+def _wait_for_clickable(driver, xpath):
+    """Wait until any matching element is clickable and return it."""
+    try:
+        return WebDriverWait(driver, _get_wait_timeout(driver)).until(
+            lambda current_driver: _find_interactable_match(
+                current_driver, xpath
+            )
+        )
+    except TimeoutException as exc:
+        matches = len(driver.find_elements(By.XPATH, xpath))
+        message = (
+            "No interactable match for XPath "
+            f"{xpath!r}; matches={matches}; "
+            f"url={getattr(driver, 'current_url', '')!r}; "
+            f"title={getattr(driver, 'title', '')!r}"
+        )
+        raise TimeoutException(message) from exc
+
+
 _COMMAND_DISPATCH = {
     # Navigation commands
     "get": _handle_navigation_command,
@@ -159,7 +211,11 @@ def execute_action(driver, action, element=None, text=None):
         if not handler:
             print(f"'{command}' is not a recognized command.")
             return False
-        if not handler(driver, instruction, element=element, text=text):
-            return False
+        try:
+            if not handler(driver, instruction, element=element, text=text):
+                return False
+        except Exception:
+            print(f"Failed instruction: {instruction}")
+            raise
 
     return True

@@ -1,4 +1,4 @@
-"""Manage and execute actions with a Selenium WebDriver."""
+"""Selenium WebDriver action execution utilities."""
 
 import re
 import time

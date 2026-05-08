@@ -1,4 +1,4 @@
-"""Handle Google Calendar events and Gmail messages."""
+"""Google Calendar and Gmail service utilities."""
 
 from email.message import EmailMessage
 import base64

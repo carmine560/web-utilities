@@ -1,4 +1,4 @@
-"""Make HTTP HEAD requests and handle potential errors."""
+"""HTTP HEAD request utilities with error handling."""
 
 import requests
 

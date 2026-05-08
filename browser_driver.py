@@ -12,6 +12,7 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
 
 from core_utilities import configuration
+from core_utilities.errors import BrowserAutomationError
 
 # Browser Driver Initialization
 
@@ -209,13 +210,17 @@ def execute_action(driver, action, element=None, text=None):
         handler = _COMMAND_DISPATCH.get(command)
 
         if not handler:
-            print(f"'{command}' is not a recognized command.")
-            return False
+            raise BrowserAutomationError(
+                f"Unrecognized browser command: {command!r}"
+            )
         try:
             if not handler(driver, instruction, element=element, text=text):
                 return False
-        except Exception:
-            print(f"Failed instruction: {instruction}")
+        except BrowserAutomationError:
             raise
+        except Exception as exc:
+            raise BrowserAutomationError(
+                f"Browser instruction failed: {instruction!r}"
+            ) from exc
 
     return True

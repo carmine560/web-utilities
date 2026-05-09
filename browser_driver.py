@@ -11,7 +11,7 @@ from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
 
-from core_utilities import configuration
+from core_utilities.config_validation import evaluate_value
 from core_utilities.errors import BrowserAutomationError
 
 # Browser Driver Initialization
@@ -203,7 +203,7 @@ _COMMAND_DISPATCH = {
 def execute_action(driver, action, element=None, text=None):
     """Execute a series of actions on a Selenium WebDriver."""
     if isinstance(action, str):
-        action = configuration.evaluate_value(action)
+        action = evaluate_value(action)
 
     for instruction in action:
         command = instruction[0]

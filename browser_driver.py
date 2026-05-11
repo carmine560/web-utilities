@@ -171,7 +171,7 @@ def _wait_for_clickable(driver, xpath):
                 current_driver, xpath
             )
         )
-    except TimeoutException as exc:
+    except TimeoutException as e:
         matches = len(driver.find_elements(By.XPATH, xpath))
         message = (
             "No interactable match for XPath "
@@ -179,7 +179,7 @@ def _wait_for_clickable(driver, xpath):
             f"url={getattr(driver, 'current_url', '')!r}; "
             f"title={getattr(driver, 'title', '')!r}"
         )
-        raise TimeoutException(message) from exc
+        raise TimeoutException(message) from e
 
 
 _COMMAND_DISPATCH = {
@@ -218,9 +218,9 @@ def execute_action(driver, action, element=None, text=None):
                 return False
         except BrowserAutomationError:
             raise
-        except Exception as exc:
+        except Exception as e:
             raise BrowserAutomationError(
                 f"Browser instruction failed: {instruction!r}"
-            ) from exc
+            ) from e
 
     return True

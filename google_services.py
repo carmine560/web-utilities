@@ -1,10 +1,11 @@
 """Google Calendar and Gmail service utilities."""
 
-from email.message import EmailMessage
 import base64
+from email.message import EmailMessage
 import os
 import re
 
+from google.auth.exceptions import GoogleAuthError
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
@@ -12,6 +13,53 @@ from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 
 from core_utilities.errors import ExternalServiceError
+
+
+def get_credentials(token_json):
+    """Obtain valid Google API credentials from a JSON token file."""
+    scopes = [
+        "https://www.googleapis.com/auth/calendar",
+        "https://www.googleapis.com/auth/gmail.readonly",
+        "https://www.googleapis.com/auth/gmail.send",
+    ]
+    credentials = None
+    if os.path.isfile(token_json):
+        try:
+            credentials = Credentials.from_authorized_user_file(
+                token_json, scopes
+            )
+        except (OSError, ValueError, GoogleAuthError) as e:
+            raise ExternalServiceError(
+                f"Unable to load Google credentials from {token_json}: {e}"
+            ) from e
+    if not credentials or not credentials.valid:
+        if credentials and credentials.expired and credentials.refresh_token:
+            try:
+                credentials.refresh(Request())
+            except (OSError, ValueError, GoogleAuthError) as e:
+                raise ExternalServiceError(
+                    "Unable to refresh Google credentials for "
+                    f"{token_json}: {e}"
+                ) from e
+        else:
+            try:
+                flow = InstalledAppFlow.from_client_secrets_file(
+                    input("Path to client_secrets.json: "), scopes
+                )
+                credentials = flow.run_local_server(port=0)
+            except (OSError, ValueError, GoogleAuthError) as e:
+                raise ExternalServiceError(
+                    "Unable to obtain Google credentials for "
+                    f"{token_json}: {e}"
+                ) from e
+        try:
+            with open(token_json, "w", encoding="utf-8") as token:
+                token.write(credentials.to_json())
+        except (OSError, TypeError, ValueError) as e:
+            raise ExternalServiceError(
+                f"Unable to write Google credentials to {token_json}: {e}"
+            ) from e
+    return credentials
 
 
 def get_calendar_resource(credentials_path, calendar_id, summary, timezone):
@@ -132,31 +180,3 @@ def extract_string_from_email(
                     return match.group(1)
 
     return None
-
-
-def get_credentials(token_json):
-    """Obtain valid Google API credentials from a JSON token file."""
-    scopes = [
-        "https://www.googleapis.com/auth/calendar",
-        "https://www.googleapis.com/auth/gmail.readonly",
-        "https://www.googleapis.com/auth/gmail.send",
-    ]
-    credentials = None
-    if os.path.isfile(token_json):
-        credentials = Credentials.from_authorized_user_file(token_json, scopes)
-    if not credentials or not credentials.valid:
-        if credentials and credentials.expired and credentials.refresh_token:
-            credentials.refresh(Request())
-        else:
-            try:
-                flow = InstalledAppFlow.from_client_secrets_file(
-                    input("Path to client_secrets.json: "), scopes
-                )
-                credentials = flow.run_local_server(port=0)
-            except (FileNotFoundError, ValueError) as e:
-                raise ExternalServiceError(
-                    f"Unable to obtain Google credentials: {e}"
-                ) from e
-        with open(token_json, "w", encoding="utf-8") as token:
-            token.write(credentials.to_json())
-    return credentials

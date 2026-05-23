@@ -1,9 +1,9 @@
 """Google Calendar and Gmail service utilities."""
 
 import base64
-from email.message import EmailMessage
 import os
 import re
+from email.message import EmailMessage
 
 from google.auth.exceptions import GoogleAuthError
 from google.auth.transport.requests import Request
@@ -166,17 +166,17 @@ def extract_string_from_email(
         data = payload.get("body", {}).get("data")
         if data:
             decoded_data = base64.urlsafe_b64decode(data).decode()
-            match = re.search(string_regex, decoded_data)
-            if match:
-                return match.group(1)
+            matched = re.search(string_regex, decoded_data)
+            if matched:
+                return matched.group(1)
 
         # Try multipart parts if the single-part body is missing.
         for part in payload.get("parts", []):
             part_data = part.get("body", {}).get("data")
             if part_data:
                 decoded_data = base64.urlsafe_b64decode(part_data).decode()
-                match = re.search(string_regex, decoded_data)
-                if match:
-                    return match.group(1)
+                matched = re.search(string_regex, decoded_data)
+                if matched:
+                    return matched.group(1)
 
     return None

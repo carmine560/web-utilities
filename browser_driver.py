@@ -128,11 +128,11 @@ def _handle_control_flow_command(driver, instruction, element=None, text=None):
                 driver, additional_argument, element=element, text=text
             )
         elif text is not None:
-            match = re.search(
+            matched = re.search(
                 r'//.*\[contains\(text\(\), "(.+)"\)\]', argument
             )
-            if match:
-                text.append(f"{match.group(1)} does not exist.")
+            if matched:
+                text.append(f"{matched.group(1)} does not exist.")
     elif command == "for":
         for item in argument.split(", "):
             execute_action(

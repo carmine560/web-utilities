@@ -103,26 +103,25 @@ def send_email_message(
     credentials_path, subject, email_message_from, email_message_to, content
 ):
     """Send an email message via Gmail."""
-    if email_message_from and email_message_to and content:
-        resource = build(
-            "gmail", "v1", credentials=get_credentials(credentials_path)
-        )
+    if not (email_message_from and email_message_to and content):
+        return False
 
-        email_message = EmailMessage()
-        email_message["Subject"] = subject
-        email_message["From"] = email_message_from
-        email_message["To"] = email_message_to
-        email_message.set_content(content)
+    resource = build(
+        "gmail", "v1", credentials=get_credentials(credentials_path)
+    )
 
-        body = {
-            "raw": base64.urlsafe_b64encode(email_message.as_bytes()).decode()
-        }
-        try:
-            resource.users().messages().send(userId="me", body=body).execute()
-        except HttpError as e:
-            raise ExternalServiceError(
-                f"Unable to send Gmail message: {e}"
-            ) from e
+    email_message = EmailMessage()
+    email_message["Subject"] = subject
+    email_message["From"] = email_message_from
+    email_message["To"] = email_message_to
+    email_message.set_content(content)
+
+    body = {"raw": base64.urlsafe_b64encode(email_message.as_bytes()).decode()}
+    try:
+        resource.users().messages().send(userId="me", body=body).execute()
+    except HttpError as e:
+        raise ExternalServiceError(f"Unable to send Gmail message: {e}") from e
+    return True
 
 
 def extract_string_from_email(

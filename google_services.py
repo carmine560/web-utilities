@@ -12,6 +12,7 @@ from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 
+from core_utilities.config_io import write_file_atomically
 from core_utilities.errors import ExternalServiceError
 
 
@@ -53,8 +54,10 @@ def get_credentials(token_json):
                     f"{token_json}: {e}"
                 ) from e
         try:
-            with open(token_json, "w", encoding="utf-8") as token:
-                token.write(credentials.to_json())
+            credentials_json = credentials.to_json()
+            write_file_atomically(
+                token_json, "w", lambda token: token.write(credentials_json)
+            )
         except (OSError, TypeError, ValueError) as e:
             raise ExternalServiceError(
                 f"Unable to write Google credentials to {token_json}: {e}"

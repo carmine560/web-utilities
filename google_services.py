@@ -10,6 +10,7 @@ from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
+from googleapiclient.errors import Error as GoogleApiError
 from googleapiclient.errors import HttpError
 
 from core_utilities.config_io import write_file_atomically
@@ -67,9 +68,14 @@ def get_credentials(token_json):
 
 def get_calendar_resource(credentials_path, calendar_id, summary, timezone):
     """Get a Google Calendar resource and create a new calendar if needed."""
-    resource = build(
-        "calendar", "v3", credentials=get_credentials(credentials_path)
-    )
+    credentials = get_credentials(credentials_path)
+    try:
+        resource = build("calendar", "v3", credentials=credentials)
+    except (OSError, ValueError, GoogleAuthError, GoogleApiError) as e:
+        raise ExternalServiceError(
+            "Unable to build Google Calendar resource for "
+            f"{credentials_path}: {e}"
+        ) from e
 
     if not calendar_id:
         try:
@@ -111,9 +117,13 @@ def send_email_message(
     if not (email_message_from and email_message_to and content):
         return False
 
-    resource = build(
-        "gmail", "v1", credentials=get_credentials(credentials_path)
-    )
+    credentials = get_credentials(credentials_path)
+    try:
+        resource = build("gmail", "v1", credentials=credentials)
+    except (OSError, ValueError, GoogleAuthError, GoogleApiError) as e:
+        raise ExternalServiceError(
+            f"Unable to build Gmail resource for {credentials_path}: {e}"
+        ) from e
 
     email_message = EmailMessage()
     email_message["Subject"] = subject
@@ -136,9 +146,13 @@ def extract_string_from_email(
     if not all((credentials_path, email_message_from, string_regex)):
         return None
 
-    resource = build(
-        "gmail", "v1", credentials=get_credentials(credentials_path)
-    )
+    credentials = get_credentials(credentials_path)
+    try:
+        resource = build("gmail", "v1", credentials=credentials)
+    except (OSError, ValueError, GoogleAuthError, GoogleApiError) as e:
+        raise ExternalServiceError(
+            f"Unable to build Gmail resource for {credentials_path}: {e}"
+        ) from e
     try:
         result = (
             resource.users()

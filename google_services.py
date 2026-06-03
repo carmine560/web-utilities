@@ -93,6 +93,8 @@ def insert_calendar_event(resource, calendar_id, body):
             .execute()
         )
     except HttpError as e:
+        if getattr(e.resp, "status", None) == 409:
+            return None
         raise ExternalServiceError(
             f"Unable to insert calendar event: {e}"
         ) from e

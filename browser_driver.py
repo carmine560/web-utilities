@@ -21,7 +21,6 @@ def initialize(
     headless=True,
     user_data_directory=None,
     profile_directory=None,
-    implicitly_wait=2,
 ):
     """Initialize a Selenium WebDriver with specified options."""
     options = Options()
@@ -30,28 +29,18 @@ def initialize(
     if user_data_directory and profile_directory:
         options.add_argument("--user-data-dir=" + user_data_directory)
         options.add_argument("--profile-directory=" + profile_directory)
-    options.add_argument("--window-size=1600,1000")
-    # Suppress the session restore dialog to prevent it from blocking
-    # navigation.
-    options.add_argument("--restore-last-session=false")
 
     driver = webdriver.Chrome(options=options)
-    if not headless:
-        try:
-            driver.maximize_window()
-        except Exception:
-            pass
-    driver.implicitly_wait(implicitly_wait)
-    driver._trading_peripheral_wait_timeout = max(float(implicitly_wait), 1.0)
 
-    driver.execute_cdp_cmd(
-        "Network.setUserAgentOverride",
-        {
-            "userAgent": driver.execute_script(
-                "return navigator.userAgent"
-            ).replace("Headless", "")
-        },
-    )
+    if headless:
+        driver.execute_cdp_cmd(
+            "Network.setUserAgentOverride",
+            {
+                "userAgent": driver.execute_script(
+                    "return navigator.userAgent"
+                ).replace("Headless", "")
+            },
+        )
 
     return driver
 
@@ -68,7 +57,9 @@ def _unpack_instruction(instruction):
     )
 
 
-def _handle_navigation_command(driver, instruction, element=None, text=None):
+def _handle_navigation_command(
+    driver, instruction, _element, _text, _wait_timeout
+):
     """Handle page navigation commands."""
     command, argument, _ = _unpack_instruction(instruction)
 
@@ -80,20 +71,20 @@ def _handle_navigation_command(driver, instruction, element=None, text=None):
     return True
 
 
-def _handle_element_command(driver, instruction, element=None, text=None):
+def _handle_element_command(driver, instruction, element, _text, wait_timeout):
     """Handle element interaction commands."""
     command, argument, additional_argument = _unpack_instruction(instruction)
 
     if command == "clear":
-        _wait_for_visible(driver, argument).clear()
+        _wait_for_visible(driver, argument, wait_timeout).clear()
     elif command == "click":
-        target = _wait_for_clickable(driver, argument)
+        target = _wait_for_clickable(driver, argument, wait_timeout)
         driver.execute_script(
             "arguments[0].scrollIntoView({block: 'center'});", target
         )
         target.click()
     elif command == "send_keys":
-        target = _wait_for_visible(driver, argument)
+        target = _wait_for_visible(driver, argument, wait_timeout)
         if additional_argument == "enter":
             target.send_keys(Keys.ENTER)
         elif additional_argument == "element":
@@ -104,28 +95,34 @@ def _handle_element_command(driver, instruction, element=None, text=None):
     return True
 
 
-def _handle_text_command(driver, instruction, element=None, text=None):
+def _handle_text_command(driver, instruction, _element, text, wait_timeout):
     """Handle text extraction command."""
     _, argument, _ = _unpack_instruction(instruction)
-    text.append(_wait_for_visible(driver, argument).text)
+    text.append(_wait_for_visible(driver, argument, wait_timeout).text)
     return True
 
 
-def _handle_wait_command(driver, instruction, element=None, text=None):
+def _handle_wait_command(_driver, instruction, _element, _text, _wait_timeout):
     """Handle blocking command."""
     _, argument, _ = _unpack_instruction(instruction)
     time.sleep(float(argument))
     return True
 
 
-def _handle_control_flow_command(driver, instruction, element=None, text=None):
+def _handle_control_flow_command(
+    driver, instruction, element, text, wait_timeout
+):
     """Handle conditional control-flow commands."""
     command, argument, additional_argument = _unpack_instruction(instruction)
 
     if command == "exist":
         if driver.find_elements(By.XPATH, argument):
             execute_action(
-                driver, additional_argument, element=element, text=text
+                driver,
+                additional_argument,
+                element=element,
+                text=text,
+                wait_timeout=wait_timeout,
             )
         elif text is not None:
             matched = re.search(
@@ -136,21 +133,20 @@ def _handle_control_flow_command(driver, instruction, element=None, text=None):
     elif command == "for":
         for item in argument.split(", "):
             execute_action(
-                driver, additional_argument, element=item, text=text
+                driver,
+                additional_argument,
+                element=item,
+                text=text,
+                wait_timeout=wait_timeout,
             )
             time.sleep(1)
 
     return True
 
 
-def _get_wait_timeout(driver):
-    """Return the explicit wait timeout configured for the driver."""
-    return getattr(driver, "_trading_peripheral_wait_timeout", 5.0)
-
-
-def _wait_for_visible(driver, xpath):
+def _wait_for_visible(driver, xpath, wait_timeout):
     """Wait until an element is visible and return it."""
-    return WebDriverWait(driver, _get_wait_timeout(driver)).until(
+    return WebDriverWait(driver, wait_timeout).until(
         EC.visibility_of_element_located((By.XPATH, xpath))
     )
 
@@ -163,10 +159,10 @@ def _find_interactable_match(driver, xpath):
     return None
 
 
-def _wait_for_clickable(driver, xpath):
+def _wait_for_clickable(driver, xpath, wait_timeout):
     """Wait until any matching element is clickable and return it."""
     try:
-        return WebDriverWait(driver, _get_wait_timeout(driver)).until(
+        return WebDriverWait(driver, wait_timeout).until(
             lambda current_driver: _find_interactable_match(
                 current_driver, xpath
             )
@@ -200,7 +196,7 @@ _COMMAND_DISPATCH = {
 }
 
 
-def execute_action(driver, action, element=None, text=None):
+def execute_action(driver, action, element=None, text=None, wait_timeout=5.0):
     """Execute a series of actions on a Selenium WebDriver."""
     if isinstance(action, str):
         action = evaluate_value(action)
@@ -214,7 +210,13 @@ def execute_action(driver, action, element=None, text=None):
                 f"Unrecognized browser command: {command!r}"
             )
         try:
-            if not handler(driver, instruction, element=element, text=text):
+            if not handler(
+                driver,
+                instruction,
+                element,
+                text,
+                wait_timeout,
+            ):
                 return False
         except BrowserAutomationError:
             raise

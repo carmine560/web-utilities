@@ -1,6 +1,7 @@
 """Google Calendar and Gmail service utilities."""
 
 import base64
+import json
 import os
 import re
 from email.message import EmailMessage
@@ -13,11 +14,93 @@ from googleapiclient.discovery import build
 from googleapiclient.errors import Error as GoogleApiError
 from googleapiclient.errors import HttpError
 
-from core_utilities.config_io import write_file_atomically
-from core_utilities.errors import ExternalServiceError
+from core_utilities.errors import ExternalServiceError, UtilityOperationError
+from core_utilities.file_utilities import read_encrypted_file
+from core_utilities.file_utilities import write_encrypted_file
 
 
-def get_credentials(token_json):
+def _encrypted_token_path(token_json):
+    """Return the encrypted credentials path for a token JSON base path."""
+    return f"{token_json}.gpg"
+
+
+def _credentials_from_json(token_json, token_data, scopes):
+    """Build credentials from in-memory token JSON bytes."""
+    try:
+        token_info = json.loads(token_data.decode("utf-8"))
+        return Credentials.from_authorized_user_info(token_info, scopes)
+    except (OSError, ValueError, GoogleAuthError) as e:
+        raise ExternalServiceError(
+            f"Unable to load Google credentials from {token_json}: {e}"
+        ) from e
+
+
+def _load_encrypted_credentials(token_json, scopes):
+    """Read encrypted token JSON and build credentials."""
+    encrypted_token_json = _encrypted_token_path(token_json)
+    try:
+        token_data = read_encrypted_file(encrypted_token_json)
+    except UtilityOperationError as e:
+        raise ExternalServiceError(
+            "Unable to load Google credentials from "
+            f"{encrypted_token_json}: {e}"
+        ) from e
+    return _credentials_from_json(encrypted_token_json, token_data, scopes)
+
+
+def _load_plaintext_credentials(token_json, scopes):
+    """Read plaintext token JSON and build credentials."""
+    try:
+        with open(token_json, "rb") as token:
+            token_data = token.read()
+    except OSError as e:
+        raise ExternalServiceError(
+            f"Unable to load Google credentials from {token_json}: {e}"
+        ) from e
+    return _credentials_from_json(token_json, token_data, scopes), token_data
+
+
+def _write_credentials(token_json, credentials, fingerprint):
+    """Encrypt and save Google credentials without a plaintext temp file."""
+    encrypted_token_json = _encrypted_token_path(token_json)
+    try:
+        credentials_json = credentials.to_json()
+        write_encrypted_file(
+            encrypted_token_json,
+            credentials_json.encode("utf-8"),
+            fingerprint=fingerprint,
+        )
+    except (OSError, TypeError, ValueError, UtilityOperationError) as e:
+        raise ExternalServiceError(
+            "Unable to write Google credentials to "
+            f"{encrypted_token_json}: {e}"
+        ) from e
+
+
+def _migrate_plaintext_credentials(token_json, token_data, fingerprint):
+    """Encrypt an existing plaintext token and remove it after success."""
+    encrypted_token_json = _encrypted_token_path(token_json)
+    try:
+        write_encrypted_file(
+            encrypted_token_json,
+            token_data,
+            fingerprint=fingerprint,
+        )
+    except UtilityOperationError as e:
+        raise ExternalServiceError(
+            "Unable to write Google credentials to "
+            f"{encrypted_token_json}: {e}"
+        ) from e
+    try:
+        os.remove(token_json)
+    except OSError as e:
+        raise ExternalServiceError(
+            "Unable to remove plaintext Google credentials from "
+            f"{token_json}: {e}"
+        ) from e
+
+
+def get_credentials(token_json, fingerprint=""):
     """Obtain valid Google API credentials from a JSON token file."""
     scopes = [
         "https://www.googleapis.com/auth/calendar",
@@ -25,15 +108,14 @@ def get_credentials(token_json):
         "https://www.googleapis.com/auth/gmail.send",
     ]
     credentials = None
-    if os.path.isfile(token_json):
-        try:
-            credentials = Credentials.from_authorized_user_file(
-                token_json, scopes
-            )
-        except (OSError, ValueError, GoogleAuthError) as e:
-            raise ExternalServiceError(
-                f"Unable to load Google credentials from {token_json}: {e}"
-            ) from e
+    encrypted_token_json = _encrypted_token_path(token_json)
+    if os.path.isfile(encrypted_token_json):
+        credentials = _load_encrypted_credentials(token_json, scopes)
+    elif os.path.isfile(token_json):
+        credentials, token_data = _load_plaintext_credentials(
+            token_json, scopes
+        )
+        _migrate_plaintext_credentials(token_json, token_data, fingerprint)
     if not credentials or not credentials.valid:
         if credentials and credentials.expired and credentials.refresh_token:
             try:
@@ -54,21 +136,15 @@ def get_credentials(token_json):
                     "Unable to obtain Google credentials for "
                     f"{token_json}: {e}"
                 ) from e
-        try:
-            credentials_json = credentials.to_json()
-            write_file_atomically(
-                token_json, "w", lambda token: token.write(credentials_json)
-            )
-        except (OSError, TypeError, ValueError) as e:
-            raise ExternalServiceError(
-                f"Unable to write Google credentials to {token_json}: {e}"
-            ) from e
+        _write_credentials(token_json, credentials, fingerprint)
     return credentials
 
 
-def get_calendar_resource(credentials_path, calendar_id, summary, timezone):
+def get_calendar_resource(
+    credentials_path, calendar_id, summary, timezone, fingerprint=""
+):
     """Get a Google Calendar resource and create a new calendar if needed."""
-    credentials = get_credentials(credentials_path)
+    credentials = get_credentials(credentials_path, fingerprint=fingerprint)
     try:
         resource = build("calendar", "v3", credentials=credentials)
     except (OSError, ValueError, GoogleAuthError, GoogleApiError) as e:
@@ -111,13 +187,18 @@ def insert_calendar_event(resource, calendar_id, body):
 
 
 def send_email_message(
-    credentials_path, subject, email_message_from, email_message_to, content
+    credentials_path,
+    subject,
+    email_message_from,
+    email_message_to,
+    content,
+    fingerprint="",
 ):
     """Send an email message via Gmail."""
     if not (email_message_from and email_message_to and content):
         return False
 
-    credentials = get_credentials(credentials_path)
+    credentials = get_credentials(credentials_path, fingerprint=fingerprint)
     try:
         resource = build("gmail", "v1", credentials=credentials)
     except (OSError, ValueError, GoogleAuthError, GoogleApiError) as e:
@@ -140,13 +221,13 @@ def send_email_message(
 
 
 def extract_string_from_email(
-    credentials_path, email_message_from, string_regex
+    credentials_path, email_message_from, string_regex, fingerprint=""
 ):
     """Extract the latest matching string from Gmail messages."""
     if not all((credentials_path, email_message_from, string_regex)):
         return None
 
-    credentials = get_credentials(credentials_path)
+    credentials = get_credentials(credentials_path, fingerprint=fingerprint)
     try:
         resource = build("gmail", "v1", credentials=credentials)
     except (OSError, ValueError, GoogleAuthError, GoogleApiError) as e:

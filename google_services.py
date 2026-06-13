@@ -19,43 +19,21 @@ from core_utilities.file_utilities import read_encrypted_file
 from core_utilities.file_utilities import write_encrypted_file
 
 
-def _credentials_from_json(token_json, token_data, scopes):
-    """Build credentials from in-memory token JSON bytes."""
-    try:
-        token_info = json.loads(token_data.decode("utf-8"))
-        return Credentials.from_authorized_user_info(token_info, scopes)
-    except (OSError, ValueError, GoogleAuthError) as e:
-        raise ExternalServiceError(
-            f"Unable to load Google credentials from {token_json}: {e}"
-        ) from e
-
-
-def _load_encrypted_credentials(token_json, scopes):
+def _read_encrypted_credentials(token_json, scopes):
     """Read encrypted token JSON and build credentials."""
     encrypted_token_json = f"{token_json}.gpg"
     try:
         token_data = read_encrypted_file(encrypted_token_json)
-    except UtilityOperationError as e:
+        token_info = json.loads(token_data.decode("utf-8"))
+        return Credentials.from_authorized_user_info(token_info, scopes)
+    except (OSError, ValueError, GoogleAuthError, UtilityOperationError) as e:
         raise ExternalServiceError(
             "Unable to load Google credentials from "
             f"{encrypted_token_json}: {e}"
         ) from e
-    return _credentials_from_json(encrypted_token_json, token_data, scopes)
 
 
-def _load_plaintext_credentials(token_json, scopes):
-    """Read plaintext token JSON and build credentials."""
-    try:
-        with open(token_json, "rb") as token:
-            token_data = token.read()
-    except OSError as e:
-        raise ExternalServiceError(
-            f"Unable to load Google credentials from {token_json}: {e}"
-        ) from e
-    return _credentials_from_json(token_json, token_data, scopes), token_data
-
-
-def _write_credentials(token_json, credentials, fingerprint):
+def _write_encrypted_credentials(token_json, credentials, fingerprint):
     """Encrypt and save Google credentials without a plaintext temp file."""
     encrypted_token_json = f"{token_json}.gpg"
     try:
@@ -72,31 +50,8 @@ def _write_credentials(token_json, credentials, fingerprint):
         ) from e
 
 
-def _migrate_plaintext_credentials(token_json, token_data, fingerprint):
-    """Encrypt an existing plaintext token and remove it after success."""
-    encrypted_token_json = f"{token_json}.gpg"
-    try:
-        write_encrypted_file(
-            encrypted_token_json,
-            token_data,
-            fingerprint=fingerprint,
-        )
-    except UtilityOperationError as e:
-        raise ExternalServiceError(
-            "Unable to write Google credentials to "
-            f"{encrypted_token_json}: {e}"
-        ) from e
-    try:
-        os.remove(token_json)
-    except OSError as e:
-        raise ExternalServiceError(
-            "Unable to remove plaintext Google credentials from "
-            f"{token_json}: {e}"
-        ) from e
-
-
 def get_credentials(token_json, fingerprint=""):
-    """Obtain valid Google API credentials from a JSON token file."""
+    """Obtain valid Google API credentials from an encrypted JSON token."""
     scopes = [
         "https://www.googleapis.com/auth/calendar",
         "https://www.googleapis.com/auth/gmail.readonly",
@@ -105,12 +60,7 @@ def get_credentials(token_json, fingerprint=""):
     credentials = None
     encrypted_token_json = f"{token_json}.gpg"
     if os.path.isfile(encrypted_token_json):
-        credentials = _load_encrypted_credentials(token_json, scopes)
-    elif os.path.isfile(token_json):
-        credentials, token_data = _load_plaintext_credentials(
-            token_json, scopes
-        )
-        _migrate_plaintext_credentials(token_json, token_data, fingerprint)
+        credentials = _read_encrypted_credentials(token_json, scopes)
     if not credentials or not credentials.valid:
         if credentials and credentials.expired and credentials.refresh_token:
             try:
@@ -131,7 +81,7 @@ def get_credentials(token_json, fingerprint=""):
                     "Unable to obtain Google credentials for "
                     f"{token_json}: {e}"
                 ) from e
-        _write_credentials(token_json, credentials, fingerprint)
+        _write_encrypted_credentials(token_json, credentials, fingerprint)
     return credentials
 
 

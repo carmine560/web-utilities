@@ -19,11 +19,6 @@ from core_utilities.file_utilities import read_encrypted_file
 from core_utilities.file_utilities import write_encrypted_file
 
 
-def _encrypted_token_path(token_json):
-    """Return the encrypted credentials path for a token JSON base path."""
-    return f"{token_json}.gpg"
-
-
 def _credentials_from_json(token_json, token_data, scopes):
     """Build credentials from in-memory token JSON bytes."""
     try:
@@ -37,7 +32,7 @@ def _credentials_from_json(token_json, token_data, scopes):
 
 def _load_encrypted_credentials(token_json, scopes):
     """Read encrypted token JSON and build credentials."""
-    encrypted_token_json = _encrypted_token_path(token_json)
+    encrypted_token_json = f"{token_json}.gpg"
     try:
         token_data = read_encrypted_file(encrypted_token_json)
     except UtilityOperationError as e:
@@ -62,7 +57,7 @@ def _load_plaintext_credentials(token_json, scopes):
 
 def _write_credentials(token_json, credentials, fingerprint):
     """Encrypt and save Google credentials without a plaintext temp file."""
-    encrypted_token_json = _encrypted_token_path(token_json)
+    encrypted_token_json = f"{token_json}.gpg"
     try:
         credentials_json = credentials.to_json()
         write_encrypted_file(
@@ -79,7 +74,7 @@ def _write_credentials(token_json, credentials, fingerprint):
 
 def _migrate_plaintext_credentials(token_json, token_data, fingerprint):
     """Encrypt an existing plaintext token and remove it after success."""
-    encrypted_token_json = _encrypted_token_path(token_json)
+    encrypted_token_json = f"{token_json}.gpg"
     try:
         write_encrypted_file(
             encrypted_token_json,
@@ -108,7 +103,7 @@ def get_credentials(token_json, fingerprint=""):
         "https://www.googleapis.com/auth/gmail.send",
     ]
     credentials = None
-    encrypted_token_json = _encrypted_token_path(token_json)
+    encrypted_token_json = f"{token_json}.gpg"
     if os.path.isfile(encrypted_token_json):
         credentials = _load_encrypted_credentials(token_json, scopes)
     elif os.path.isfile(token_json):

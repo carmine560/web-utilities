@@ -102,10 +102,18 @@ def _handle_text_command(driver, instruction, _element, text, wait_timeout):
     return True
 
 
-def _handle_wait_command(_driver, instruction, _element, _text, _wait_timeout):
-    """Handle blocking command."""
-    _, argument, _ = _unpack_instruction(instruction)
-    time.sleep(float(argument))
+def _handle_wait_command(driver, instruction, _element, _text, wait_timeout):
+    """Handle blocking and wait commands."""
+    command, argument, additional_argument = _unpack_instruction(instruction)
+
+    if command == "sleep":
+        time.sleep(float(argument))
+    elif command == "wait_absent":
+        timeout = float(additional_argument or wait_timeout)
+        WebDriverWait(driver, timeout).until(
+            EC.invisibility_of_element_located((By.XPATH, argument))
+        )
+
     return True
 
 
@@ -190,6 +198,7 @@ _COMMAND_DISPATCH = {
     "text": _handle_text_command,
     # Blocking command
     "sleep": _handle_wait_command,
+    "wait_absent": _handle_wait_command,
     # Conditional control-flow commands
     "exist": _handle_control_flow_command,
     "for": _handle_control_flow_command,

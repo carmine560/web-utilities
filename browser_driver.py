@@ -5,7 +5,7 @@ import time
 
 from selenium import webdriver
 from selenium.common.exceptions import TimeoutException
-from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.firefox.options import Options
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.support import expected_conditions as EC
@@ -18,31 +18,14 @@ from core_utilities.errors import BrowserAutomationError
 
 
 def initialize(
-    headless=True,
-    user_data_directory=None,
-    profile_directory=None,
+    firefox_profile_directory=None,
 ):
     """Initialize a Selenium WebDriver with specified options."""
     options = Options()
-    if headless:
-        options.add_argument("--headless=new")
-    if user_data_directory and profile_directory:
-        options.add_argument("--user-data-dir=" + user_data_directory)
-        options.add_argument("--profile-directory=" + profile_directory)
+    if firefox_profile_directory:
+        options.profile = firefox_profile_directory
 
-    driver = webdriver.Chrome(options=options)
-
-    if headless:
-        driver.execute_cdp_cmd(
-            "Network.setUserAgentOverride",
-            {
-                "userAgent": driver.execute_script(
-                    "return navigator.userAgent"
-                ).replace("Headless", "")
-            },
-        )
-
-    return driver
+    return webdriver.Firefox(options=options)
 
 
 # Action Execution Pipeline

@@ -23,7 +23,10 @@ def initialize(
     """Initialize a Selenium WebDriver with specified options."""
     options = Options()
     if firefox_profile_directory:
-        options.profile = firefox_profile_directory
+        options.add_argument("-profile")
+        options.add_argument(firefox_profile_directory)
+        options.add_argument("--marionette-port")
+        options.add_argument("2828")
 
     return webdriver.Firefox(options=options)
 
